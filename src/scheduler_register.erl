@@ -23,7 +23,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {}).
+-record(state, {map}).
 
 %%%===================================================================
 %%% API
@@ -55,7 +55,7 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    {ok, #state{}}.
+    {ok, #state{map=#{}}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -71,9 +71,15 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call({add, Type}, From, #state{map=OldMap}) ->
+    OldHandlers = maps:get(Type, OldMap, sets:new()),
+    NewHandlers = sets:add_element(From, OldHandlers),
+    NewMap = maps:put(Type, NewHandlers, OldMap),
+    {reply, ok, #state{map=NewMap}};
+
+handle_call({get, Type}, _From, #state{map=Map}) ->
+    #{Type := Handlers} = Map,
+    {reply, Handlers, #state{map=Map}}.
 
 %%--------------------------------------------------------------------
 %% @private
