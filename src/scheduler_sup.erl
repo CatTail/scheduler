@@ -36,12 +36,12 @@ init([]) ->
                     shutdown => brutal_kill,
                     type => worker,
                     modules => [scheduler_register]}
-                  #{id => scheduler_manager,
-                    start => {scheduler_manager, start_link, []},
-                    restart => permanent,
-                    shutdown => brutal_kill,
-                    type => worker,
-                    modules => [scheduler_manager]}
+                  %#{id => scheduler_manager,
+                  %  start => {scheduler_manager, start_link, []},
+                  %  restart => permanent,
+                  %  shutdown => brutal_kill,
+                  %  type => worker,
+                  %  modules => [scheduler_manager]}
                  ],
     {ok, {SupFlags, ChildSpecs}}.
 

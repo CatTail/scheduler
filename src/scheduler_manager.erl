@@ -24,7 +24,7 @@
 -define(SERVER, ?MODULE).
 -define(INTERVAL, 1000).
 
--record(state, {}).
+-record(state, {handlers, jobs}).
 
 %%%===================================================================
 %%% API
@@ -57,7 +57,7 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     erlang:send_after(?INTERVAL, self(), ping),
-    {ok, #state{}}.
+    {ok, #state{handlers=#{}, jobs=#{}}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -73,9 +73,28 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+handle_call({put, job, Type, Interval}, _From, #state{jobs=Jobs, handlers=Handlers}) ->
+    NewJobs = maps:put(Type, #{interval=>Interval, timelapse=>0}, Jobs),
+    NewHandlers = maps:put(Type, sets:new(), Handlers),
+    {reply, ok, #state{handlers=NewHandlers, jobs=NewJobs}};
+
+handle_call({remove, job, Type}, _From, #state{jobs=Jobs, handlers=Handlers}) ->
+    NewJobs = maps:remove(Type, Jobs),
+    NewHandlers = maps:remove(Type, Handlers),
+    {reply, ok, #state{handlers=NewHandlers, jobs=NewJobs}};
+
+handle_call({add, handler, Type}, From, #state{jobs=Jobs, handlers=Handlers}) ->
+    #{Type := OldTypeHandlers} = Handlers,
+    NewTypeHandlers = sets:add_element(From, OldTypeHandlers),
+    NewHandlers = maps:put(Type, NewTypeHandlers, Handlers),
+    {reply, ok, #state{handlers=NewHandlers, jobs=Jobs}};
+
+handle_call({get, Type}, _From, #state{jobs=Jobs, handlers=Handlers}) ->
+    {reply, get_job(Type, Jobs, Handlers), #state{handlers=Handlers, jobs=Jobs}};
+
+handle_call({get}, _From, #state{jobs=Jobs, handlers=Handlers}) ->
+    Fun = fun(Type, _Job) -> get_job(Type, Jobs, Handlers) end,
+    {reply, maps:map(Fun, Jobs), #state{handlers=Handlers, jobs=Jobs}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -103,6 +122,7 @@ handle_cast(_Msg, State) ->
 handle_info(ping, #state{}) ->
     Start = erlang:system_time(),
 
+    % fetch jobs and handlers
     % do some task
     io:format("do something\n"),
     timer:sleep(50),
@@ -147,6 +167,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-
-
-
+get_job(Type, Jobs, Handlers) ->
+    #{Type := #{interval := Interval, timelapse := Timeelapse}} = Jobs,
+    #{Type := TypeHandlers} = Handlers,
+    {Interval, Timeelapse, sets:to_list(TypeHandlers)}.
