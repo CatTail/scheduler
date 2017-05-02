@@ -24,7 +24,7 @@
 -define(SERVER, ?MODULE).
 -define(INTERVAL, 1000).
 
--record(state, {handlers, jobs}).
+-record(state, {jobs}).
 
 %%%===================================================================
 %%% API
@@ -57,7 +57,7 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     erlang:send_after(?INTERVAL, self(), ping),
-    {ok, #state{handlers=#{}, jobs=#{}}}.
+    {ok, #state{jobs=#{}}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -73,28 +73,29 @@ init([]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({put, job, Type, Interval}, _From, #state{jobs=Jobs, handlers=Handlers}) ->
-    NewJobs = maps:put(Type, #{interval=>Interval, timelapse=>0}, Jobs),
-    NewHandlers = maps:put(Type, sets:new(), Handlers),
-    {reply, ok, #state{handlers=NewHandlers, jobs=NewJobs}};
+handle_call({put, job, Type, Interval}, _From, #state{jobs=Jobs}) ->
+    Job = maps:get(Type, Jobs, #{timelapse => 0, handlers => []}),
+    NewJob = maps:put(interval, Interval, Job),
+    NewJobs = maps:put(Type, NewJob, Jobs),
+    {reply, ok, #state{jobs=NewJobs}};
 
-handle_call({remove, job, Type}, _From, #state{jobs=Jobs, handlers=Handlers}) ->
+handle_call({remove, job, Type}, _From, #state{jobs=Jobs}) ->
     NewJobs = maps:remove(Type, Jobs),
-    NewHandlers = maps:remove(Type, Handlers),
-    {reply, ok, #state{handlers=NewHandlers, jobs=NewJobs}};
+    {reply, ok, #state{jobs=NewJobs}};
 
-handle_call({add, handler, Type}, From, #state{jobs=Jobs, handlers=Handlers}) ->
-    #{Type := OldTypeHandlers} = Handlers,
-    NewTypeHandlers = sets:add_element(From, OldTypeHandlers),
-    NewHandlers = maps:put(Type, NewTypeHandlers, Handlers),
-    {reply, ok, #state{handlers=NewHandlers, jobs=Jobs}};
+handle_call({add, handler, Type}, From, #state{jobs=Jobs}) ->
+    Job = maps:get(Type, Jobs),
+    Handlers = sets:from_list(maps:get(handlers, Job)),
+    NewHandlers = sets:to_list(sets:add_element(From, Handlers)),
+    NewJob = maps:put(handler, NewHandlers, Job),
+    NewJobs = maps:put(Type, NewJob, Jobs),
+    {reply, ok, #state{jobs=NewJobs}};
 
-handle_call({get, Type}, _From, #state{jobs=Jobs, handlers=Handlers}) ->
-    {reply, get_job(Type, Jobs, Handlers), #state{handlers=Handlers, jobs=Jobs}};
+handle_call({get, Type}, _From, #state{jobs=Jobs}) ->
+    {reply, maps:get(Type, Jobs), #state{jobs=Jobs}};
 
-handle_call({get}, _From, #state{jobs=Jobs, handlers=Handlers}) ->
-    Fun = fun(Type, _Job) -> get_job(Type, Jobs, Handlers) end,
-    {reply, maps:map(Fun, Jobs), #state{handlers=Handlers, jobs=Jobs}}.
+handle_call({get}, _From, #state{jobs=Jobs}) ->
+    {reply, Jobs, #state{jobs=Jobs}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -119,7 +120,7 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(ping, #state{}) ->
+handle_info(ping, State) ->
     Start = erlang:system_time(),
 
     % fetch jobs and handlers
@@ -136,7 +137,7 @@ handle_info(ping, #state{}) ->
         true ->
             erlang:send_after(?INTERVAL - Comsumed, self(), ping)
     end,
-    {noreply, #state{}}.
+    {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -167,7 +168,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-get_job(Type, Jobs, Handlers) ->
-    #{Type := #{interval := Interval, timelapse := Timeelapse}} = Jobs,
-    #{Type := TypeHandlers} = Handlers,
-    {Interval, Timeelapse, sets:to_list(TypeHandlers)}.

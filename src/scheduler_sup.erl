@@ -30,18 +30,12 @@ start_link() ->
 init([]) ->
     SupFlags = #{strategy => one_for_one, intensity => 1, period => 5},
     ChildSpecs = [
-                  #{id => scheduler_register,
-                    start => {scheduler_register, start_link, []},
+                  #{id => scheduler_manager,
+                    start => {scheduler_manager, start_link, []},
                     restart => permanent,
                     shutdown => brutal_kill,
                     type => worker,
-                    modules => [scheduler_register]}
-                  %#{id => scheduler_manager,
-                  %  start => {scheduler_manager, start_link, []},
-                  %  restart => permanent,
-                  %  shutdown => brutal_kill,
-                  %  type => worker,
-                  %  modules => [scheduler_manager]}
+                    modules => [scheduler_manager]}
                  ],
     {ok, {SupFlags, ChildSpecs}}.
 
