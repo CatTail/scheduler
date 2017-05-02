@@ -9,6 +9,7 @@
 -module(scheduler_manager).
 
 -behaviour(gen_server).
+-include_lib("stdlib/include/ms_transform.hrl").
 
 %% API
 -export([start_link/0]).
@@ -57,7 +58,15 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     erlang:send_after(?INTERVAL, self(), ping),
-    {ok, #state{jobs=#{}}}.
+    Jobs = case ets:file2tab("jobs") of
+               {ok, Tab} ->
+                   Tab;
+               {error, _Reason} ->
+                   Tab = ets:new(jobs, [set]),
+                   % TODO: add backup job
+                   Tab
+           end,
+    {ok, #state{jobs=Jobs}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -74,28 +83,45 @@ init([]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({put, job, Type, Interval}, _From, #state{jobs=Jobs}) ->
-    Job = maps:get(Type, Jobs, #{timelapse => 0, handlers => []}),
+    Job = case ets:lookup(Jobs, Type) of
+              [] ->
+                  #{timelapse => 0, handlers => []};
+              [{_Type, _Job}] ->
+                  _Job
+          end,
     NewJob = maps:put(interval, Interval, Job),
-    NewJobs = maps:put(Type, NewJob, Jobs),
-    {reply, ok, #state{jobs=NewJobs}};
+    ets:insert(Jobs, {Type, NewJob}),
+    ets:tab2file(Jobs, jobs),
+    {reply, ok, #state{jobs=Jobs}};
 
 handle_call({remove, job, Type}, _From, #state{jobs=Jobs}) ->
-    NewJobs = maps:remove(Type, Jobs),
-    {reply, ok, #state{jobs=NewJobs}};
+    ets:delete(Jobs, Type),
+    ets:tab2file(Jobs, jobs),
+    {reply, ok, #state{jobs=Jobs}};
 
 handle_call({add, handler, Type}, From, #state{jobs=Jobs}) ->
-    Job = maps:get(Type, Jobs),
+    Job = ets:lookup_element(Jobs, Type, 2),
     Handlers = sets:from_list(maps:get(handlers, Job)),
     NewHandlers = sets:to_list(sets:add_element(From, Handlers)),
     NewJob = maps:put(handler, NewHandlers, Job),
-    NewJobs = maps:put(Type, NewJob, Jobs),
-    {reply, ok, #state{jobs=NewJobs}};
+    ets:insert(Jobs, {Type, NewJob}),
+    ets:tab2file(Jobs, jobs),
+    {reply, ok, #state{jobs=Jobs}};
 
 handle_call({get, Type}, _From, #state{jobs=Jobs}) ->
-    {reply, maps:get(Type, Jobs), #state{jobs=Jobs}};
+    Job = ets:lookup_element(Jobs, Type, 2),
+    {reply, Job, #state{jobs=Jobs}};
 
 handle_call({get}, _From, #state{jobs=Jobs}) ->
-    {reply, Jobs, #state{jobs=Jobs}}.
+    MatchSpec = ets:fun2ms(fun({Type, Job}) -> {Type, Job} end),
+    Matchs = ets:select(Jobs, MatchSpec),
+    Result = lists:foldl(
+               fun({Type, Job}, Result) -> 
+                       Result#{ Type := Job }
+               end,
+               #{},
+               Matchs),
+    {reply, Result, #state{jobs=Jobs}}.
 
 %%--------------------------------------------------------------------
 %% @private

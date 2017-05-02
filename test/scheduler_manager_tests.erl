@@ -50,5 +50,5 @@ remove_job(Pid) ->
             ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
             ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, JobName})),
             ?assertEqual(ok, gen_server:call(Pid, {remove, job, JobName})),
-            ?assertExit({{{badkey, _}, _}, _}, gen_server:call(Pid, {get, JobName}))
+            ?assertExit({{badarg, _}, _}, gen_server:call(Pid, {get, JobName}))
     end.
