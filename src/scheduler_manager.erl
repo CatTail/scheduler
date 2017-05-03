@@ -161,6 +161,8 @@ handle_info(tick, State) ->
                               Handler = lists:nth(Index, Handlers),
                               Handler ! erlang:list_to_atom(Type);
                           false ->
+                              % TODO: notify user missing handlers
+                              io:format("~s don't have handlers\n", [Type]),
                               false
                       end,
                       update_timelapse(Jobs, Type, 0)
@@ -172,6 +174,11 @@ handle_info(tick, State) ->
 handle_info(backup, State) ->
     io:format("execute backup\n"),
     backup_jobs(State#state.jobs, State#state.backup),
+    {noreply, State};
+
+handle_info({'DOWN', _MonitorRef, process, Handler, _Info}, State) ->
+    ?debugVal(Handler),
+    remove_handler(State#state.jobs, Handler, State#state.backup),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -229,11 +236,23 @@ remove_job(Jobs, Type, Backup) ->
     backup_jobs(Jobs, Backup).
 
 add_handler(Jobs, Type, Handler, Backup) ->
+    erlang:monitor(process, Handler),
     Job = ets:lookup_element(Jobs, Type, 2),
     Handlers = sets:from_list(maps:get(handlers, Job)),
     NewHandlers = sets:to_list(sets:add_element(Handler, Handlers)),
     NewJob = maps:put(handlers, NewHandlers, Job),
     ets:insert(Jobs, {Type, NewJob}),
+    backup_jobs(Jobs, Backup).
+
+remove_handler(Jobs, Handler, Backup) ->
+    lists:foreach(
+      fun({Type, Job}) ->
+              Handlers = maps:get(handlers, Job),
+              NewHandlers = lists:delete(Handler, Handlers),
+              NewJob = maps:put(handlers, NewHandlers, Job),
+              ets:insert(Jobs, {Type, NewJob})
+      end,
+      get_job_list(Jobs)),
     backup_jobs(Jobs, Backup).
 
 get_job(Jobs, Type) ->
