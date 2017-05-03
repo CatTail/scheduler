@@ -5,15 +5,16 @@
 scheduler_manager_test_() ->
     {foreach, fun setup/0, fun cleanup/1,
      [
-      fun server_is_alive/1,
-      fun create_new_job/1,
+      fun create_backup_job/1,
+      fun remove_job/1,
       fun update_job_interval/1,
-      fun remove_job/1
+      fun create_new_job/1,
+      fun server_is_alive/1
      ]}.
 
 setup() ->
     process_flag(trap_exit, true),
-    {ok, Pid} = scheduler_manager:start_link(),
+    {ok, Pid} = scheduler_manager:start_link([true]),
     Pid.
 
 cleanup(Pid) ->
@@ -51,4 +52,9 @@ remove_job(Pid) ->
             ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, JobName})),
             ?assertEqual(ok, gen_server:call(Pid, {remove, job, JobName})),
             ?assertExit({{badarg, _}, _}, gen_server:call(Pid, {get, JobName}))
+    end.
+
+create_backup_job(Pid) ->
+    fun() ->
+            ?assertMatch(#{interval := 10, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, "backup"}))
     end.

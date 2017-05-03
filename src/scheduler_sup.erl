@@ -30,6 +30,12 @@ start_link() ->
 init([]) ->
     SupFlags = #{strategy => one_for_one, intensity => 1, period => 5},
     ChildSpecs = [
+                  #{id => scheduler_clock,
+                    start => {scheduler_clock, start_link, []},
+                    restart => permanent,
+                    shutdown => brutal_kill,
+                    type => worker,
+                    modules => [scheduler_clock]},
                   #{id => scheduler_manager,
                     start => {scheduler_manager, start_link, []},
                     restart => permanent,
