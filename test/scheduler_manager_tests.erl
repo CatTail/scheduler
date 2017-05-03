@@ -5,6 +5,8 @@
 scheduler_manager_test_() ->
     {foreach, fun setup/0, fun cleanup/1,
      [
+      fun add_duplicate_handler/1,
+      fun add_handler/1,
       fun create_backup_job/1,
       fun remove_job/1,
       fun update_job_interval/1,
@@ -56,5 +58,24 @@ remove_job(Pid) ->
 
 create_backup_job(Pid) ->
     fun() ->
-            ?assertMatch(#{interval := 10, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, "backup"}))
+            ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, "backup"}))
+    end.
+
+add_handler(Pid) ->
+    fun() ->
+            JobName = "job-name",
+            JobInterval = 10,
+            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName})),
+            ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, JobName}))
+    end.
+
+add_duplicate_handler(Pid) ->
+    fun() ->
+            JobName = "job-name",
+            JobInterval = 10,
+            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName})),
+            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName})),
+            ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, JobName}))
     end.

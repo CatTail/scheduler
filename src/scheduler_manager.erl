@@ -102,8 +102,8 @@ handle_call({remove, job, Type}, _From, State) ->
     remove_job(State#state.jobs, Type, State#state.backup),
     {reply, ok, State};
 
-handle_call({add, handler, Type}, From, State) ->
-    add_handler(State#state.jobs, Type, From, State#state.backup),
+handle_call({add, handler, Type}, {Handler, _Tag}, State) ->
+    add_handler(State#state.jobs, Type, Handler, State#state.backup),
     {reply, ok, State};
 
 handle_call({get, Type}, _From, State) ->
@@ -140,27 +140,37 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(tick, #state{jobs=Jobs}) ->
+handle_info(tick, State) ->
+    Jobs = State#state.jobs,
     % fetch jobs and handlers
     List = get_job_list(Jobs),
     lists:foreach(
       fun ({Type, Job}) -> 
-              io:format("process job ~s\n", [Type]),
+              io:format("process ~s\n", [Type]),
               #{interval := Interval, timelapse := Timelapse, handlers := Handlers} = Job,
               % check if handlers should notified
               case Interval > Timelapse of
                   true ->
                       update_timelapse(Jobs, Type, Timelapse + 1);
                   false ->
-                      io:format("notify job ~s\n", [Type]),
-                      lists:foreach(fun(Handler) -> Handler ! Type end, Handlers),
+                      io:format("notify ~s\n", [Type]),
+                      Length = length(Handlers),
+                      case Length > 0 of
+                          true ->
+                              Index = rand:uniform(Length),
+                              Handler = lists:nth(Index, Handlers),
+                              Handler ! erlang:list_to_atom(Type);
+                          false ->
+                              false
+                      end,
                       update_timelapse(Jobs, Type, 0)
               end
       end,
       List),
-    {noreply, #state{jobs=Jobs}};
+    {noreply, State};
 
 handle_info(backup, State) ->
+    io:format("execute backup\n"),
     backup_jobs(State#state.jobs, State#state.backup),
     {noreply, State}.
 
@@ -222,7 +232,7 @@ add_handler(Jobs, Type, Handler, Backup) ->
     Job = ets:lookup_element(Jobs, Type, 2),
     Handlers = sets:from_list(maps:get(handlers, Job)),
     NewHandlers = sets:to_list(sets:add_element(Handler, Handlers)),
-    NewJob = maps:put(handler, NewHandlers, Job),
+    NewJob = maps:put(handlers, NewHandlers, Job),
     ets:insert(Jobs, {Type, NewJob}),
     backup_jobs(Jobs, Backup).
 
