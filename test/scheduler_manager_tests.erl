@@ -14,7 +14,7 @@ scheduler_manager_test_() ->
 
 setup() ->
     process_flag(trap_exit, true),
-    {ok, Pid} = scheduler_manager:start_link([true]),
+    {ok, Pid} = scheduler_manager:start_link([false]),
     Pid.
 
 cleanup(Pid) ->

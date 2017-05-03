@@ -10,6 +10,8 @@
 
 -behaviour(gen_server).
 -include_lib("stdlib/include/ms_transform.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
 
 %% API
 -export([start_link/0,
@@ -25,7 +27,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {jobs, test}).
+-record(state, {jobs, backup}).
 
 %%%===================================================================
 %%% API
@@ -39,7 +41,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [false], []).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [true], []).
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
@@ -60,23 +62,23 @@ start_link(Args) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([Test]) ->
+init([Backup]) ->
     Jobs = case ets:file2tab("jobs") of
                {ok, Tab} ->
-                   case Test of
+                   case Backup of
                        true ->
-                           create_table();
+                           Tab;
                        false ->
-                           Tab
+                           create_table()
                    end;
                {error, _Reason} ->
                    create_table()
            end,
     % override backup job even exist on disk
     Type = "backup",
-    add_or_update_job(Jobs, Type, 10),
-    add_handler(Jobs, Type, self()),
-    {ok, #state{jobs=Jobs, test=Test}}.
+    add_or_update_job(Jobs, Type, 10, Backup),
+    add_handler(Jobs, Type, self(), Backup),
+    {ok, #state{jobs=Jobs, backup=Backup}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -92,28 +94,28 @@ init([Test]) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({put, job, Type, Interval}, _From, #state{jobs=Jobs}) ->
-    add_or_update_job(Jobs, Type, Interval),
-    {reply, ok, #state{jobs=Jobs}};
+handle_call({put, job, Type, Interval}, _From, State) ->
+    add_or_update_job(State#state.jobs, Type, Interval, State#state.backup),
+    {reply, ok, State};
 
-handle_call({remove, job, Type}, _From, #state{jobs=Jobs}) ->
-    remove_job(Jobs, Type),
-    {reply, ok, #state{jobs=Jobs}};
+handle_call({remove, job, Type}, _From, State) ->
+    remove_job(State#state.jobs, Type, State#state.backup),
+    {reply, ok, State};
 
-handle_call({add, handler, Type}, From, #state{jobs=Jobs}) ->
-    add_handler(Jobs, Type, From),
-    {reply, ok, #state{jobs=Jobs}};
+handle_call({add, handler, Type}, From, State) ->
+    add_handler(State#state.jobs, Type, From, State#state.backup),
+    {reply, ok, State};
 
-handle_call({get, Type}, _From, #state{jobs=Jobs}) ->
-    {reply, get_job(Jobs, Type), #state{jobs=Jobs}};
+handle_call({get, Type}, _From, State) ->
+    {reply, get_job(State#state.jobs, Type), State};
 
-handle_call({get}, _From, #state{jobs=Jobs}) ->
-    List = get_job_list(Jobs),
+handle_call({get}, _From, State) ->
+    List = get_job_list(State#state.jobs),
     Reply = lists:foldl(
                fun({Type, Job}, Result) -> Result#{ Type := Job } end,
                #{},
                List),
-    {reply, Reply, #state{jobs=Jobs}}.
+    {reply, Reply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -158,9 +160,9 @@ handle_info(tick, #state{jobs=Jobs}) ->
       List),
     {noreply, #state{jobs=Jobs}};
 
-handle_info(backup, #state{jobs=Jobs}) ->
-    ets:tab2file(Jobs, jobs),
-    {noreply, #state{jobs=Jobs}}.
+handle_info(backup, State) ->
+    backup_jobs(State#state.jobs, State#state.backup),
+    {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -195,7 +197,7 @@ create_table() ->
     Jobs = ets:new(jobs, [set]),
     Jobs.
 
-add_or_update_job(Jobs, Type, Interval) ->
+add_or_update_job(Jobs, Type, Interval, Backup) ->
     Job = case ets:lookup(Jobs, Type) of
               [] ->
                   #{timelapse => 0, handlers => []};
@@ -204,7 +206,7 @@ add_or_update_job(Jobs, Type, Interval) ->
           end,
     NewJob = maps:put(interval, Interval, Job),
     ets:insert(Jobs, {Type, NewJob}),
-    ets:tab2file(Jobs, jobs).
+    backup_jobs(Jobs, Backup).
 
 update_timelapse(Jobs, Type, Timelapse) ->
     Job = ets:lookup_element(Jobs, Type, 2),
@@ -212,17 +214,17 @@ update_timelapse(Jobs, Type, Timelapse) ->
     % dont persist to disk on every timelapse change
     ets:insert(Jobs, {Type, NewJob}).
 
-remove_job(Jobs, Type) ->
+remove_job(Jobs, Type, Backup) ->
     ets:delete(Jobs, Type),
-    ets:tab2file(Jobs, jobs).
+    backup_jobs(Jobs, Backup).
 
-add_handler(Jobs, Type, Handler) ->
+add_handler(Jobs, Type, Handler, Backup) ->
     Job = ets:lookup_element(Jobs, Type, 2),
     Handlers = sets:from_list(maps:get(handlers, Job)),
     NewHandlers = sets:to_list(sets:add_element(Handler, Handlers)),
     NewJob = maps:put(handler, NewHandlers, Job),
     ets:insert(Jobs, {Type, NewJob}),
-    ets:tab2file(Jobs, jobs).
+    backup_jobs(Jobs, Backup).
 
 get_job(Jobs, Type) ->
     ets:lookup_element(Jobs, Type, 2).
@@ -230,3 +232,11 @@ get_job(Jobs, Type) ->
 get_job_list(Jobs) ->
     MatchSpec = ets:fun2ms(fun({Type, Job}) -> {Type, Job} end),
     ets:select(Jobs, MatchSpec).
+
+backup_jobs(Jobs, Backup) ->
+    case Backup of
+        true -> 
+            ets:tab2file(Jobs, jobs);
+        false ->
+            false
+    end.

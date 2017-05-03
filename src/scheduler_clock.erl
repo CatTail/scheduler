@@ -24,7 +24,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {interval}).
+-record(state, {receiver, interval}).
 
 %%%===================================================================
 %%% API
@@ -38,7 +38,7 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [1000], []).
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [scheduler_manager, 1000], []).
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
@@ -58,9 +58,9 @@ start_link(Args) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([Interval]) ->
+init([Receiver, Interval]) ->
     erlang:send_after(Interval, self(), tick),
-    {ok, #state{interval=Interval}}.
+    {ok, #state{receiver=Receiver, interval=Interval}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -103,10 +103,10 @@ handle_cast(_Msg, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(tick, #state{interval=Interval}) ->
-    scheduler_manager ! tick,
+handle_info(tick, #state{receiver=Receiver, interval=Interval}) ->
+    Receiver ! tick,
     erlang:send_after(Interval, self(), tick),
-    {noreply, #state{interval=Interval}}.
+    {noreply, #state{receiver=Receiver, interval=Interval}}.
 
 %%--------------------------------------------------------------------
 %% @private
