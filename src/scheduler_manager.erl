@@ -27,7 +27,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {jobs, backup}).
+-record(state, {jobs, handlers, backup}).
 
 %%%===================================================================
 %%% API
@@ -76,9 +76,10 @@ init([Backup]) ->
            end,
     % override backup job even exist on disk
     Type = "backup",
-    add_or_update_job(Jobs, Type, 10, Backup),
-    add_handler(Jobs, Type, self(), Backup),
-    {ok, #state{jobs=Jobs, backup=Backup}}.
+    State = #state{jobs = Jobs, handlers = #{}, backup = Backup},
+    TmpState = add_or_update_job(State, Type, 10),
+    NewState = add_handler(TmpState, Type, self()),
+    {ok, NewState}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -95,27 +96,22 @@ init([Backup]) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({put, job, Type, Interval}, _From, State) ->
-    add_or_update_job(State#state.jobs, Type, Interval, State#state.backup),
-    {reply, ok, State};
+    NewState = add_or_update_job(State, Type, Interval),
+    {reply, ok, NewState};
 
 handle_call({remove, job, Type}, _From, State) ->
-    remove_job(State#state.jobs, Type, State#state.backup),
-    {reply, ok, State};
+    NewState = remove_job(State, Type),
+    {reply, ok, NewState};
 
 handle_call({add, handler, Type}, {Handler, _Tag}, State) ->
-    add_handler(State#state.jobs, Type, Handler, State#state.backup),
-    {reply, ok, State};
+    NewState = add_handler(State, Type, Handler),
+    {reply, ok, NewState};
 
 handle_call({get, Type}, _From, State) ->
-    {reply, get_job(State#state.jobs, Type), State};
+    {reply, get_job(State, Type), State};
 
 handle_call({get}, _From, State) ->
-    List = get_job_list(State#state.jobs),
-    Reply = lists:foldl(
-               fun({Type, Job}, Result) -> Result#{ Type := Job } end,
-               #{},
-               List),
-    {reply, Reply, State}.
+    {reply, get_job_map(State), State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -141,17 +137,15 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info(tick, State) ->
-    Jobs = State#state.jobs,
     % fetch jobs and handlers
-    List = get_job_list(Jobs),
-    lists:foreach(
-      fun ({Type, Job}) -> 
+    map:fold(
+      fun (Type, Job, _Acc) -> 
               io:format("process ~s\n", [Type]),
               #{interval := Interval, timelapse := Timelapse, handlers := Handlers} = Job,
               % check if handlers should notified
               case Interval > Timelapse of
                   true ->
-                      update_timelapse(Jobs, Type, Timelapse + 1);
+                      update_timelapse(State, Type, Timelapse + 1);
                   false ->
                       io:format("notify ~s\n", [Type]),
                       Length = length(Handlers),
@@ -165,21 +159,21 @@ handle_info(tick, State) ->
                               io:format("~s don't have handlers\n", [Type]),
                               false
                       end,
-                      update_timelapse(Jobs, Type, 0)
+                      update_timelapse(State, Type, 0)
               end
       end,
-      List),
+      get_job_map(State)),
     {noreply, State};
 
 handle_info(backup, State) ->
     io:format("execute backup\n"),
-    backup_jobs(State#state.jobs, State#state.backup),
+    backup_jobs(State),
     {noreply, State};
 
 handle_info({'DOWN', _MonitorRef, process, Handler, _Info}, State) ->
     ?debugVal(Handler),
-    remove_handler(State#state.jobs, Handler, State#state.backup),
-    {noreply, State}.
+    NewState = remove_handler(State, Handler),
+    {noreply, NewState}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -214,58 +208,72 @@ create_table() ->
     Jobs = ets:new(jobs, [set]),
     Jobs.
 
-add_or_update_job(Jobs, Type, Interval, Backup) ->
+add_or_update_job(State, Type, Interval) ->
+    Jobs = State#state.jobs,
     Job = case ets:lookup(Jobs, Type) of
               [] ->
-                  #{timelapse => 0, handlers => []};
+                  #{timelapse => 0};
               [{_Type, _Job}] ->
                   _Job
           end,
-    NewJob = maps:put(interval, Interval, Job),
+    NewJob = Job#{interval => Interval},
     ets:insert(Jobs, {Type, NewJob}),
-    backup_jobs(Jobs, Backup).
+    backup_jobs(State).
 
-update_timelapse(Jobs, Type, Timelapse) ->
+update_timelapse(State, Type, Timelapse) ->
+    Jobs = State#state.jobs,
     Job = ets:lookup_element(Jobs, Type, 2),
-    NewJob = maps:put(timelapse, Timelapse, Job),
+    NewJob = Job#{timelapse => Timelapse},
     % dont persist to disk on every timelapse change
-    ets:insert(Jobs, {Type, NewJob}).
-
-remove_job(Jobs, Type, Backup) ->
-    ets:delete(Jobs, Type),
-    backup_jobs(Jobs, Backup).
-
-add_handler(Jobs, Type, Handler, Backup) ->
-    erlang:monitor(process, Handler),
-    Job = ets:lookup_element(Jobs, Type, 2),
-    Handlers = sets:from_list(maps:get(handlers, Job)),
-    NewHandlers = sets:to_list(sets:add_element(Handler, Handlers)),
-    NewJob = maps:put(handlers, NewHandlers, Job),
     ets:insert(Jobs, {Type, NewJob}),
-    backup_jobs(Jobs, Backup).
+    State.
 
-remove_handler(Jobs, Handler, Backup) ->
-    lists:foreach(
-      fun({Type, Job}) ->
-              Handlers = maps:get(handlers, Job),
-              NewHandlers = lists:delete(Handler, Handlers),
-              NewJob = maps:put(handlers, NewHandlers, Job),
-              ets:insert(Jobs, {Type, NewJob})
+remove_job(State, Type) ->
+    Jobs = State#state.jobs,
+    ets:delete(Jobs, Type),
+    backup_jobs(State).
+
+add_handler(State, Type, Handler) ->
+    erlang:monitor(process, Handler),
+    Handlers = State#state.handlers,
+    TypeHandlers = sets:from_list(maps:get(Type, Handlers, [])),
+    NewTypeHandlers = sets:to_list(sets:add_element(Handler, TypeHandlers)),
+    NewHandlers = Handlers#{ Type => NewTypeHandlers },
+    backup_jobs(State#state{handlers=NewHandlers}).
+
+remove_handler(State, Handler) ->
+    Handlers = State#state.handlers,
+    NewHandlers = maps:fold(
+      fun(Type, TypeHandlers, NewHandlers) ->
+              NewTypeHandlers = lists:delete(Handler, TypeHandlers),
+              NewHandlers#{ Type => NewTypeHandlers }
       end,
-      get_job_list(Jobs)),
-    backup_jobs(Jobs, Backup).
+      #{},
+      Handlers),
+    backup_jobs(State#state{handlers=NewHandlers}).
 
-get_job(Jobs, Type) ->
-    ets:lookup_element(Jobs, Type, 2).
+get_job(State, Type) ->
+    Job = ets:lookup_element(State#state.jobs, Type, 2),
+    TypeHandlers = maps:get(Type, State#state.handlers, []),
+    Job#{ handlers => TypeHandlers }.
 
-get_job_list(Jobs) ->
+get_job_map(State) ->
     MatchSpec = ets:fun2ms(fun({Type, Job}) -> {Type, Job} end),
-    ets:select(Jobs, MatchSpec).
+    Jobs = ets:select(State#state.jobs, MatchSpec),
+    lists:foldl(
+      fun({Type, Job}, Acc) ->
+              TypeHandlers = maps:get(Type, State#state.handlers, []),
+              NewJob = Job#{ handlers => TypeHandlers },
+              Acc#{ Type => NewJob }
+      end,
+      #{},
+      Jobs).
 
-backup_jobs(Jobs, Backup) ->
-    case Backup of
+backup_jobs(State) ->
+    case State#state.backup of
         true -> 
-            ets:tab2file(Jobs, jobs);
+            ets:tab2file(State#state.jobs, "jobs");
         false ->
             false
-    end.
+    end,
+    State.
