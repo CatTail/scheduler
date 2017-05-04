@@ -103,7 +103,7 @@ handle_call({remove, job, Type}, _From, State) ->
     NewState = remove_job(State, Type),
     {reply, ok, NewState};
 
-handle_call({add, handler, Type}, {Handler, _Tag}, State) ->
+handle_call({add, handler, Type, Handler}, _From, State) ->
     NewState = add_handler(State, Type, Handler),
     {reply, ok, NewState};
 
@@ -140,23 +140,25 @@ handle_info(tick, State) ->
     % fetch jobs and handlers
     maps:fold(
       fun (Type, Job, _Acc) -> 
-              io:format("process ~s\n", [Type]),
+              ?debugFmt("process ~s", [Type]),
               #{interval := Interval, timelapse := Timelapse, handlers := Handlers} = Job,
               % check if handlers should notified
-              case Interval > Timelapse of
+              NewTimelapse = Timelapse + 1,
+              case Interval > NewTimelapse of
                   true ->
-                      update_timelapse(State, Type, Timelapse + 1);
+                      update_timelapse(State, Type, NewTimelapse);
                   false ->
-                      io:format("notify ~s\n", [Type]),
+                      ?debugFmt("notify ~s", [Type]),
                       Length = length(Handlers),
                       case Length > 0 of
                           true ->
                               Index = rand:uniform(Length),
                               Handler = lists:nth(Index, Handlers),
+                              ?debugFmt("execute ~s", [Type]),
                               Handler ! erlang:list_to_atom(Type);
                           false ->
                               % TODO: notify user missing handlers
-                              io:format("~s don't have handlers\n", [Type]),
+                              ?debugFmt("~s don't have handlers", [Type]),
                               false
                       end,
                       update_timelapse(State, Type, 0)
@@ -167,7 +169,6 @@ handle_info(tick, State) ->
     {noreply, State};
 
 handle_info(backup, State) ->
-    io:format("execute backup\n"),
     backup_jobs(State),
     {noreply, State};
 

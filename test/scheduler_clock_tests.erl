@@ -43,15 +43,5 @@ send_message_on_interval({_Pid, ReceiverPid}) ->
             ?assertEqual(4, length(gen_server:call(ReceiverPid, dump))),
             timer:sleep(10),
             ?assertEqual(5, length(gen_server:call(ReceiverPid, dump))),
-            timer:sleep(10),
-            ?assertEqual(6, length(gen_server:call(ReceiverPid, dump))),
-            timer:sleep(10),
-            ?assertEqual(7, length(gen_server:call(ReceiverPid, dump))),
-            timer:sleep(10),
-            ?assertEqual(8, length(gen_server:call(ReceiverPid, dump))),
-            timer:sleep(10),
-            ?assertEqual(9, length(gen_server:call(ReceiverPid, dump))),
-            timer:sleep(10),
-            ?assertEqual(10, length(gen_server:call(ReceiverPid, dump))),
             ok
     end.

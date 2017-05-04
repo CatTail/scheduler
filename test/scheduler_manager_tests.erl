@@ -5,6 +5,7 @@
 scheduler_manager_test_() ->
     {foreach, fun setup/0, fun cleanup/1,
      [
+      fun send_message_to_handler/1,
       fun monitor_handler_crash/1,
       fun add_duplicate_handler/1,
       fun add_handler/1,
@@ -73,7 +74,7 @@ add_handler(Pid) ->
             JobName = "job-name",
             JobInterval = 10,
             ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
-            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName})),
+            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName, self()})),
             ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, JobName})),
             ok
     end.
@@ -83,8 +84,8 @@ add_duplicate_handler(Pid) ->
             JobName = "job-name",
             JobInterval = 10,
             ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
-            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName})),
-            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName})),
+            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName, self()})),
+            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName, self()})),
             ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, JobName})),
             ok
     end.
@@ -98,8 +99,8 @@ monitor_handler_crash(Pid) ->
             ?assertEqual(ok, gen_server:call(Pid, {put, job, AnotherJobName, JobInterval})),
             Handler = spawn_link(
                         fun() -> 
-                                gen_server:call(Pid, {add, handler, JobName}),
-                                gen_server:call(Pid, {add, handler, AnotherJobName}),
+                                gen_server:call(Pid, {add, handler, JobName, self()}),
+                                gen_server:call(Pid, {add, handler, AnotherJobName, self()}),
                                 receive done -> ok end
                         end),
             timer:sleep(10),
@@ -109,5 +110,25 @@ monitor_handler_crash(Pid) ->
             timer:sleep(10),
             ?assertMatch(#{interval := 10, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, JobName})),
             ?assertMatch(#{interval := 10, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, AnotherJobName})),
+            ok
+    end.
+
+send_message_to_handler(Pid) ->
+    fun() ->
+            {ok, ReceiverPid} = scheduler_receiver:start_link(),
+            JobName = "job-name",
+            JobInterval = 1,
+            ?debugHere,
+            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName, ReceiverPid})),
+            ?assertEqual(0, length(gen_server:call(ReceiverPid, dump))),
+            Pid ! tick,
+            Pid ! tick,
+            Pid ! tick,
+            Pid ! tick,
+            Pid ! tick,
+            timer:sleep(10),
+            ?assertEqual(5, length(gen_server:call(ReceiverPid, dump))),
+            gen_server:stop(ReceiverPid),
             ok
     end.
