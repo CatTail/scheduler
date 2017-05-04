@@ -138,7 +138,7 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info(tick, State) ->
     % fetch jobs and handlers
-    map:fold(
+    maps:fold(
       fun (Type, Job, _Acc) -> 
               io:format("process ~s\n", [Type]),
               #{interval := Interval, timelapse := Timelapse, handlers := Handlers} = Job,
@@ -162,6 +162,7 @@ handle_info(tick, State) ->
                       update_timelapse(State, Type, 0)
               end
       end,
+      ok,
       get_job_map(State)),
     {noreply, State};
 
