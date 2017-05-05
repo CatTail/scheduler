@@ -1,9 +1,11 @@
-scheduler
-=====
+# scheduler
 
 Simple cron like scheduler but for distributed system.
 
-Build
------
+## Build
 
     $ rebar3 compile
+
+## Test
+
+    $ rebar3 eunit
