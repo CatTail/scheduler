@@ -14,8 +14,7 @@
 
 
 %% API
--export([start_link/0,
-         start_link/1]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -27,7 +26,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {jobs, handlers, backup}).
+-record(state, {jobs, handlers}).
 
 %%%===================================================================
 %%% API
@@ -40,9 +39,6 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [true], []).
-
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
 
@@ -62,19 +58,8 @@ start_link(Args) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([Backup]) ->
-    Jobs = case Backup of
-               true ->
-                   case ets:file2tab("jobs") of
-                       {ok, Tab} ->
-                           Tab;
-                       {error, _Reason} ->
-                           create_table()
-                   end;
-               false ->
-                   create_table()
-           end,
-    {ok, #state{jobs = Jobs, handlers = #{}, backup = Backup}}.
+init([Jobs]) ->
+    {ok, #state{jobs = Jobs, handlers = #{}}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -195,11 +180,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
-create_table() ->
-    Jobs = ets:new(scheduler_jobs, [set, public, named_table]),
-    Jobs.
-
 add_or_update_job(State, Type, Interval) ->
     Jobs = State#state.jobs,
     Job = case ets:lookup(Jobs, Type) of
@@ -262,14 +242,7 @@ get_job_map(State) ->
       Jobs).
 
 backup_jobs(State) ->
-    case State#state.backup of
-        true -> 
-            ets:tab2file(State#state.jobs, "jobs"),
-            %send_message(State, "backup"),
-            true;
-        false ->
-            false
-    end,
+    send_message(State, "backup"),
     State.
 
 is_job_exit(State, Type) ->

@@ -17,7 +17,8 @@ scheduler_manager_test_() ->
 
 setup() ->
     process_flag(trap_exit, true),
-    {ok, Pid} = scheduler_manager:start_link([false]),
+    Jobs = ets:new(scheduler_jobs, [set, public]),
+    {ok, Pid} = scheduler_manager:start_link([Jobs]),
     Pid.
 
 cleanup(Pid) ->

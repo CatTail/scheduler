@@ -12,7 +12,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% API
--export([start_link/0]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -24,7 +24,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {}).
+-record(state, {jobs}).
 
 %%%===================================================================
 %%% API
@@ -37,8 +37,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link(Args) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -55,9 +55,9 @@ start_link() ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init([]) ->
+init([Jobs]) ->
     reconnect(),
-    {ok, #state{}}.
+    {ok, #state{jobs=Jobs}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -102,7 +102,7 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info(backup, State) ->
     ?debugMsg("execute backup"),
-    ets:tab2file(scheduler_jobs, "jobs"),
+    ets:tab2file(State#state.jobs, "jobs"),
     {noreply, State};
 
 % manager crashed

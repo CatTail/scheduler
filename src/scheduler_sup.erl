@@ -28,6 +28,13 @@ start_link() ->
 
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
+    Jobs = case ets:file2tab("jobs") of
+               {ok, Tab} ->
+                   Tab;
+               {error, _Reason} ->
+                   ets:new(scheduler_jobs, [set, public])
+           end,
+
     SupFlags = #{strategy => one_for_one, intensity => 1, period => 5},
     ChildSpecs = [
                   #{id => scheduler_clock,
@@ -37,13 +44,13 @@ init([]) ->
                     type => worker,
                     modules => [scheduler_clock]},
                   #{id => scheduler_manager,
-                    start => {scheduler_manager, start_link, []},
+                    start => {scheduler_manager, start_link, [[Jobs]]},
                     restart => permanent,
                     shutdown => brutal_kill,
                     type => worker,
                     modules => [scheduler_manager]},
                   #{id => scheduler_backup,
-                    start => {scheduler_backup, start_link, []},
+                    start => {scheduler_backup, start_link, [[Jobs]]},
                     restart => permanent,
                     shutdown => brutal_kill,
                     type => worker,
