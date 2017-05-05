@@ -63,23 +63,18 @@ start_link(Args) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Backup]) ->
-    Jobs = case ets:file2tab("jobs") of
-               {ok, Tab} ->
-                   case Backup of
-                       true ->
+    Jobs = case Backup of
+               true ->
+                   case ets:file2tab("jobs") of
+                       {ok, Tab} ->
                            Tab;
-                       false ->
+                       {error, _Reason} ->
                            create_table()
                    end;
-               {error, _Reason} ->
+               false ->
                    create_table()
            end,
-    % override backup job even exist on disk
-    Type = "backup",
-    State = #state{jobs = Jobs, handlers = #{}, backup = Backup},
-    TmpState = add_or_update_job(State, Type, 10),
-    NewState = add_handler(TmpState, Type, self()),
-    {ok, NewState}.
+    {ok, #state{jobs = Jobs, handlers = #{}, backup = Backup}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -141,7 +136,7 @@ handle_info(tick, State) ->
     maps:fold(
       fun (Type, Job, _Acc) -> 
               ?debugFmt("process ~s", [Type]),
-              #{interval := Interval, timelapse := Timelapse, handlers := Handlers} = Job,
+              #{interval := Interval, timelapse := Timelapse} = Job,
               % check if handlers should notified
               NewTimelapse = Timelapse + 1,
               case Interval > NewTimelapse of
@@ -149,27 +144,12 @@ handle_info(tick, State) ->
                       update_timelapse(State, Type, NewTimelapse);
                   false ->
                       ?debugFmt("notify ~s", [Type]),
-                      Length = length(Handlers),
-                      case Length > 0 of
-                          true ->
-                              Index = rand:uniform(Length),
-                              Handler = lists:nth(Index, Handlers),
-                              ?debugFmt("execute ~s", [Type]),
-                              Handler ! erlang:list_to_atom(Type);
-                          false ->
-                              % TODO: notify user missing handlers
-                              ?debugFmt("~s don't have handlers", [Type]),
-                              false
-                      end,
+                      send_message(State, Type),
                       update_timelapse(State, Type, 0)
               end
       end,
       ok,
       get_job_map(State)),
-    {noreply, State};
-
-handle_info(backup, State) ->
-    backup_jobs(State),
     {noreply, State};
 
 handle_info({'DOWN', _MonitorRef, process, Handler, _Info}, State) ->
@@ -207,7 +187,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 create_table() ->
-    Jobs = ets:new(jobs, [set]),
+    Jobs = ets:new(scheduler_jobs, [set, public, named_table]),
     Jobs.
 
 add_or_update_job(State, Type, Interval) ->
@@ -274,8 +254,28 @@ get_job_map(State) ->
 backup_jobs(State) ->
     case State#state.backup of
         true -> 
-            ets:tab2file(State#state.jobs, "jobs");
+            % FIXME: how to fix backup and manager deps?
+            ets:tab2file(State#state.jobs, "jobs"),
+            %send_message(State, "backup"),
+            true;
         false ->
             false
     end,
     State.
+
+% send messages to one of handlers
+send_message(State, Type) ->
+    Handlers = State#state.handlers,
+    TypeHandlers = maps:get(Type, Handlers, []),
+    Length = length(TypeHandlers),
+    case Length > 0 of
+        true ->
+            Index = rand:uniform(Length),
+            Handler = lists:nth(Index, TypeHandlers),
+            ?debugFmt("send message ~s", [Type]),
+            Handler ! erlang:list_to_atom(Type);
+        false ->
+            % TODO: notify user missing handlers
+            ?debugFmt("~s don't have handlers", [Type]),
+            false
+    end.

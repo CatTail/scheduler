@@ -9,7 +9,7 @@ scheduler_manager_test_() ->
       fun monitor_handler_crash/1,
       fun add_duplicate_handler/1,
       fun add_handler/1,
-      fun create_backup_job/1,
+      %fun create_backup_job/1,
       fun remove_job/1,
       fun update_job_interval/1,
       fun create_new_job/1,

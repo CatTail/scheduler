@@ -41,7 +41,13 @@ init([]) ->
                     restart => permanent,
                     shutdown => brutal_kill,
                     type => worker,
-                    modules => [scheduler_manager]}
+                    modules => [scheduler_manager]},
+                  #{id => scheduler_backup,
+                    start => {scheduler_backup, start_link, []},
+                    restart => permanent,
+                    shutdown => brutal_kill,
+                    type => worker,
+                    modules => [scheduler_backup]}
                  ],
     {ok, {SupFlags, ChildSpecs}}.
 
