@@ -1,7 +1,7 @@
 scheduler
 =====
 
-An OTP application
+Simple cron like scheduler but for distributed system.
 
 Build
 -----

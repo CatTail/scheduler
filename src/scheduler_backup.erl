@@ -56,8 +56,7 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    gen_server:call(scheduler_manager, {put, job, "backup", 10}),
-    gen_server:call(scheduler_manager, {add, handler, "backup", self()}),
+    reconnect(),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -104,6 +103,11 @@ handle_cast(_Msg, State) ->
 handle_info(backup, State) ->
     ?debugMsg("execute backup"),
     ets:tab2file(scheduler_jobs, "jobs"),
+    {noreply, State};
+
+% manager crashed
+handle_info({'DOWN', _MonitorRef, process, _Object, _Info}, State) ->
+    reconnect(),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -135,6 +139,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-
-
-
+reconnect() ->
+    case whereis(scheduler_manager) of
+        undefined ->
+            timer:sleep(10),
+            reconnect();
+        _ ->
+            gen_server:call(scheduler_manager, {put, job, "backup", 10}),
+            gen_server:call(scheduler_manager, {add, handler, "backup", self()}),
+            erlang:monitor(process, scheduler_manager)
+    end,
+    ok.

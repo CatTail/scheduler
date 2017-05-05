@@ -162,6 +162,7 @@ handle_info(tick, State) ->
       get_job_map(State)),
     {noreply, State};
 
+% handler crashed
 handle_info({'DOWN', _MonitorRef, process, Handler, _Info}, State) ->
     NewState = remove_handler(State, Handler),
     {noreply, NewState}.
@@ -263,7 +264,6 @@ get_job_map(State) ->
 backup_jobs(State) ->
     case State#state.backup of
         true -> 
-            % FIXME: how to fix backup and manager deps?
             ets:tab2file(State#state.jobs, "jobs"),
             %send_message(State, "backup"),
             true;
