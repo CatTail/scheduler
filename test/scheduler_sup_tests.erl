@@ -32,15 +32,15 @@ handle_crash_state(_Pid) ->
             AnotherJobName = "another-job-name",
             JobInterval = 10,
 
-            ?assertEqual(ok, gen_server:call(scheduler_manager, {put, job, JobName, JobInterval})),
-            ?assertEqual(ok, gen_server:call(scheduler_manager, {put, job, AnotherJobName, JobInterval})),
-            ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(scheduler_manager, {get, JobName})),
-            ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(scheduler_manager, {get, AnotherJobName})),
+            ?assertEqual({ok}, gen_server:call(scheduler_manager, {put, job, JobName, JobInterval})),
+            ?assertEqual({ok}, gen_server:call(scheduler_manager, {put, job, AnotherJobName, JobInterval})),
+            ?assertMatch({ok, #{interval := JobInterval, timelapse := 0, handlers := []}}, gen_server:call(scheduler_manager, {get, JobName})),
+            ?assertMatch({ok, #{interval := JobInterval, timelapse := 0, handlers := []}}, gen_server:call(scheduler_manager, {get, AnotherJobName})),
 
             exit(whereis(scheduler_manager), kill),
             % wait for child to restart
             timer:sleep(1),
-            ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(scheduler_manager, {get, AnotherJobName})),
+            ?assertMatch({ok, #{interval := JobInterval, timelapse := 0, handlers := []}}, gen_server:call(scheduler_manager, {get, AnotherJobName})),
             % cleanup
-            ?assertEqual(ok, gen_server:call(scheduler_manager, {remove, job, AnotherJobName}))
+            ?assertEqual({ok}, gen_server:call(scheduler_manager, {remove, job, AnotherJobName}))
     end.

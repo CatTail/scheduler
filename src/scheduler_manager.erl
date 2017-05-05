@@ -92,21 +92,31 @@ init([Backup]) ->
 %%--------------------------------------------------------------------
 handle_call({put, job, Type, Interval}, _From, State) ->
     NewState = add_or_update_job(State, Type, Interval),
-    {reply, ok, NewState};
+    {reply, {ok}, NewState};
 
 handle_call({remove, job, Type}, _From, State) ->
     NewState = remove_job(State, Type),
-    {reply, ok, NewState};
+    {reply, {ok}, NewState};
 
 handle_call({add, handler, Type, Handler}, _From, State) ->
-    NewState = add_handler(State, Type, Handler),
-    {reply, ok, NewState};
+    case is_job_exit(State, Type) of
+        true ->
+            NewState = add_handler(State, Type, Handler),
+            {reply, {ok}, NewState};
+        false ->
+            {reply, {notfound}, State}
+    end;
 
 handle_call({get, Type}, _From, State) ->
-    {reply, get_job(State, Type), State};
+    case is_job_exit(State, Type) of
+        true ->
+            {reply, {ok, get_job(State, Type)}, State};
+        false ->
+            {reply, {notfound}, State}
+    end;
 
 handle_call({get}, _From, State) ->
-    {reply, get_job_map(State), State}.
+    {reply, {ok, get_job_map(State)}, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -215,7 +225,6 @@ remove_job(State, Type) ->
     backup_jobs(State).
 
 add_handler(State, Type, Handler) ->
-    % TODO: what if job not exist?
     erlang:monitor(process, Handler),
     Handlers = State#state.handlers,
     TypeHandlers = sets:from_list(maps:get(Type, Handlers, [])),
@@ -235,13 +244,9 @@ remove_handler(State, Handler) ->
     backup_jobs(State#state{handlers=NewHandlers}).
 
 get_job(State, Type) ->
-    case ets:lookup(State#state.jobs, Type) of
-        [] ->
-            notfound;
-        [{_Type, Job}] ->
-            TypeHandlers = maps:get(Type, State#state.handlers, []),
-            Job#{ handlers => TypeHandlers }
-    end.
+    Job = ets:lookup_element(State#state.jobs, Type, 2),
+    TypeHandlers = maps:get(Type, State#state.handlers, []),
+    Job#{ handlers => TypeHandlers }.
 
 get_job_map(State) ->
     MatchSpec = ets:fun2ms(fun({Type, Job}) -> {Type, Job} end),
@@ -266,6 +271,14 @@ backup_jobs(State) ->
             false
     end,
     State.
+
+is_job_exit(State, Type) ->
+    case ets:lookup(State#state.jobs, Type) of
+        [] ->
+            false;
+        [{_Type, _Job}] ->
+            true
+    end.
 
 % send messages to one of the handlers
 send_message(State, Type) ->

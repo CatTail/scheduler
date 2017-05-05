@@ -35,8 +35,8 @@ create_new_job(Pid) ->
     fun() ->
             JobName = "job-name",
             JobInterval = 10,
-            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
-            ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, JobName})),
+            ?assertEqual({ok}, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertMatch({ok, #{interval := JobInterval, timelapse := 0, handlers := []}}, gen_server:call(Pid, {get, JobName})),
             ok
     end.
 
@@ -45,9 +45,9 @@ update_job_interval(Pid) ->
             JobName = "job-name",
             JobInterval = 10,
             NewJobInterval = 20,
-            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
-            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, NewJobInterval})),
-            ?assertMatch(#{interval := NewJobInterval, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, JobName})),
+            ?assertEqual({ok}, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertEqual({ok}, gen_server:call(Pid, {put, job, JobName, NewJobInterval})),
+            ?assertMatch({ok, #{interval := NewJobInterval, timelapse := 0, handlers := []}}, gen_server:call(Pid, {get, JobName})),
             ok
     end.
 
@@ -55,10 +55,10 @@ remove_job(Pid) ->
     fun() ->
             JobName = "job-name",
             JobInterval = 10,
-            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
-            ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, JobName})),
-            ?assertEqual(ok, gen_server:call(Pid, {remove, job, JobName})),
-            ?assertEqual(notfound, gen_server:call(Pid, {get, JobName})),
+            ?assertEqual({ok}, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertMatch({ok, #{interval := JobInterval, timelapse := 0, handlers := []}}, gen_server:call(Pid, {get, JobName})),
+            ?assertEqual({ok}, gen_server:call(Pid, {remove, job, JobName})),
+            ?assertEqual({notfound}, gen_server:call(Pid, {get, JobName})),
             ok
     end.
 
@@ -66,9 +66,9 @@ add_handler(Pid) ->
     fun() ->
             JobName = "job-name",
             JobInterval = 10,
-            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
-            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName, self()})),
-            ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, JobName})),
+            ?assertEqual({ok}, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertEqual({ok}, gen_server:call(Pid, {add, handler, JobName, self()})),
+            ?assertMatch({ok, #{interval := 10, timelapse := 0, handlers := [_]}}, gen_server:call(Pid, {get, JobName})),
             ok
     end.
 
@@ -76,10 +76,10 @@ add_duplicate_handler(Pid) ->
     fun() ->
             JobName = "job-name",
             JobInterval = 10,
-            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
-            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName, self()})),
-            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName, self()})),
-            ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, JobName})),
+            ?assertEqual({ok}, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertEqual({ok}, gen_server:call(Pid, {add, handler, JobName, self()})),
+            ?assertEqual({ok}, gen_server:call(Pid, {add, handler, JobName, self()})),
+            ?assertMatch({ok, #{interval := 10, timelapse := 0, handlers := [_]}}, gen_server:call(Pid, {get, JobName})),
             ok
     end.
 
@@ -88,8 +88,8 @@ monitor_handler_crash(Pid) ->
             JobName = "job-name",
             AnotherJobName = "another-job-name",
             JobInterval = 10,
-            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
-            ?assertEqual(ok, gen_server:call(Pid, {put, job, AnotherJobName, JobInterval})),
+            ?assertEqual({ok}, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertEqual({ok}, gen_server:call(Pid, {put, job, AnotherJobName, JobInterval})),
             Handler = spawn_link(
                         fun() -> 
                                 gen_server:call(Pid, {add, handler, JobName, self()}),
@@ -97,12 +97,12 @@ monitor_handler_crash(Pid) ->
                                 receive done -> ok end
                         end),
             timer:sleep(10),
-            ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, JobName})),
-            ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, AnotherJobName})),
+            ?assertMatch({ok, #{interval := 10, timelapse := 0, handlers := [_]}}, gen_server:call(Pid, {get, JobName})),
+            ?assertMatch({ok, #{interval := 10, timelapse := 0, handlers := [_]}}, gen_server:call(Pid, {get, AnotherJobName})),
             Handler ! done,
             timer:sleep(10),
-            ?assertMatch(#{interval := 10, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, JobName})),
-            ?assertMatch(#{interval := 10, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, AnotherJobName})),
+            ?assertMatch({ok, #{interval := 10, timelapse := 0, handlers := []}}, gen_server:call(Pid, {get, JobName})),
+            ?assertMatch({ok, #{interval := 10, timelapse := 0, handlers := []}}, gen_server:call(Pid, {get, AnotherJobName})),
             ok
     end.
 
@@ -111,9 +111,8 @@ send_message_to_handler(Pid) ->
             {ok, ReceiverPid} = scheduler_receiver:start_link(),
             JobName = "job-name",
             JobInterval = 1,
-            ?debugHere,
-            ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
-            ?assertEqual(ok, gen_server:call(Pid, {add, handler, JobName, ReceiverPid})),
+            ?assertEqual({ok}, gen_server:call(Pid, {put, job, JobName, JobInterval})),
+            ?assertEqual({ok}, gen_server:call(Pid, {add, handler, JobName, ReceiverPid})),
             ?assertEqual(0, length(gen_server:call(ReceiverPid, dump))),
             Pid ! tick,
             Pid ! tick,
