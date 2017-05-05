@@ -9,7 +9,6 @@ scheduler_manager_test_() ->
       fun monitor_handler_crash/1,
       fun add_duplicate_handler/1,
       fun add_handler/1,
-      %fun create_backup_job/1,
       fun remove_job/1,
       fun update_job_interval/1,
       fun create_new_job/1,
@@ -59,13 +58,7 @@ remove_job(Pid) ->
             ?assertEqual(ok, gen_server:call(Pid, {put, job, JobName, JobInterval})),
             ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(Pid, {get, JobName})),
             ?assertEqual(ok, gen_server:call(Pid, {remove, job, JobName})),
-            ?assertExit({{badarg, _}, _}, gen_server:call(Pid, {get, JobName})),
-            ok
-    end.
-
-create_backup_job(Pid) ->
-    fun() ->
-            ?assertMatch(#{interval := 10, timelapse := 0, handlers := [_]}, gen_server:call(Pid, {get, "backup"})),
+            ?assertEqual(notfound, gen_server:call(Pid, {get, JobName})),
             ok
     end.
 

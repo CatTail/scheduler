@@ -153,7 +153,6 @@ handle_info(tick, State) ->
     {noreply, State};
 
 handle_info({'DOWN', _MonitorRef, process, Handler, _Info}, State) ->
-    ?debugVal(Handler),
     NewState = remove_handler(State, Handler),
     {noreply, NewState}.
 
@@ -216,6 +215,7 @@ remove_job(State, Type) ->
     backup_jobs(State).
 
 add_handler(State, Type, Handler) ->
+    % TODO: what if job not exist?
     erlang:monitor(process, Handler),
     Handlers = State#state.handlers,
     TypeHandlers = sets:from_list(maps:get(Type, Handlers, [])),
@@ -235,9 +235,13 @@ remove_handler(State, Handler) ->
     backup_jobs(State#state{handlers=NewHandlers}).
 
 get_job(State, Type) ->
-    Job = ets:lookup_element(State#state.jobs, Type, 2),
-    TypeHandlers = maps:get(Type, State#state.handlers, []),
-    Job#{ handlers => TypeHandlers }.
+    case ets:lookup(State#state.jobs, Type) of
+        [] ->
+            notfound;
+        [{_Type, Job}] ->
+            TypeHandlers = maps:get(Type, State#state.handlers, []),
+            Job#{ handlers => TypeHandlers }
+    end.
 
 get_job_map(State) ->
     MatchSpec = ets:fun2ms(fun({Type, Job}) -> {Type, Job} end),
@@ -263,7 +267,7 @@ backup_jobs(State) ->
     end,
     State.
 
-% send messages to one of handlers
+% send messages to one of the handlers
 send_message(State, Type) ->
     Handlers = State#state.handlers,
     TypeHandlers = maps:get(Type, Handlers, []),

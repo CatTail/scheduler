@@ -37,8 +37,7 @@ handle_crash_state(_Pid) ->
             ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(scheduler_manager, {get, JobName})),
             ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(scheduler_manager, {get, AnotherJobName})),
 
-            ?assertEqual(ok, gen_server:call(scheduler_manager, {remove, job, JobName})),
-            ?assertExit({{badarg, _}, _}, gen_server:call(scheduler_manager, {get, JobName})),
+            exit(whereis(scheduler_manager), kill),
             % wait for child to restart
             timer:sleep(1),
             ?assertMatch(#{interval := JobInterval, timelapse := 0, handlers := []}, gen_server:call(scheduler_manager, {get, AnotherJobName})),
