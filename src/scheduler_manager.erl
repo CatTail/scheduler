@@ -39,8 +39,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Args) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
+start_link(Jobs) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [Jobs], []).
 
 
 %%%===================================================================
